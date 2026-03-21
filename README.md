@@ -34,9 +34,10 @@ You can also use environment variable `DEBUG: true` to pring messages from gotif
 
 NodeJS 24+ required.
 
-1. `git clone`
-2. `npm ci`
-3. `GOTIFY_WS_URL=wss://gotify.domain.com/stream GOTIFY_TOKEN=XXX TELEGRAM_BOT_TOKEN=XXX:YYY TELEGRAM_CHAT_ID=ZZZ node src/index.ts`
+1. `git clone https://github.com/jehy/gotogram.git`
+2. `cd gotogram`
+3. `npm ci`
+4. `GOTIFY_WS_URL=wss://gotify.domain.com/stream GOTIFY_TOKEN=XXX TELEGRAM_BOT_TOKEN=XXX:YYY TELEGRAM_CHAT_ID=ZZZ node src/index.ts`
 
 ## FAQ
 
