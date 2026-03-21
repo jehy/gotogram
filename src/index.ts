@@ -150,11 +150,6 @@ process.once("SIGINT", () => {
   if (ws) {
     ws.close();
   }
-  try {
-    bot.stop("SIGINT");
-  } catch (err) {
-    logger.warn(`Error stopping bot: ${err}`);
-  }
   process.exit(0);
 });
 
@@ -163,14 +158,8 @@ process.once("SIGTERM", () => {
   if (ws) {
     ws.close();
   }
-  try {
-    bot.stop("SIGTERM");
-  } catch (err) {
-    logger.warn(`Error stopping bot: ${err}`);
-  }
   process.exit(0);
 });
 
 // Start
 connectWebSocket();
-bot.launch();

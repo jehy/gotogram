@@ -49,7 +49,11 @@ NodeJS 24+ required.
 
 ## See also
 
-Plugins:
+**Plugins:**
 
 * https://github.com/anhbh310/gotify2telegram - seems abandoned, and I could not manage forks to work
 * https://github.com/0xpetersatoshi/gotify-to-telegram - seems abandoned
+
+**Standalone Apps:**
+
+* https://github.com/Tiagura/gotigram - almost same as this one (gotogram), I didn't manage to google it until I wrote my own :)
