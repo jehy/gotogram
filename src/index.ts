@@ -81,7 +81,7 @@ function formatGotifyMessage(data: GotifyMessage): string {
   const message = data.message || "";
   const priority = data.priority ?? 0;
 
-  const formatted = `*${getPriorityEmoji(priority)} ${title}*\n${message}}`;
+  const formatted = `*${getPriorityEmoji(priority)} ${title}*\n${message}`;
   return formatted.trim();
 }
 
