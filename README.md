@@ -20,7 +20,7 @@ services:
           cpus: '0.3'
           memory: 200M
     environment:
-      GOTIFY_WS_URL: wss://gotify.yourdomain.com/stream
+      GOTIFY_WS_URL: wss://gotify.yourdomain.com/stream #websocket gotify url, should start from ws if http, and from wss if https. Should end with /stream.
       GOTIFY_TOKEN: XXXXX
       TELEGRAM_BOT_TOKEN: XXX:YYY
       TELEGRAM_CHAT_ID: xxx

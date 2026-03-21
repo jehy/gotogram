@@ -48,7 +48,11 @@ if (!GOTIFY_WS_URL.endsWith("/stream")) {
     'Gotify WebSocket URL should end with "/stream", did you make a mistake?',
   );
 }
-
+if (!GOTIFY_WS_URL.startsWith("ws://") && !GOTIFY_WS_URL.startsWith("wss://")) {
+  logger.warn(
+    'Gotify WebSocket URL should start with "ws://" or "wss://", did you make a mistake?',
+  );
+}
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
 async function sendToTelegram(text: string): Promise<void> {
