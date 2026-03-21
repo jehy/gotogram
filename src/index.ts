@@ -1,8 +1,18 @@
 import { Telegraf } from "telegraf";
 import type { Types } from "telegraf";
-import Logger from "pino";
+import Pino from "pino";
 
-const logger = Logger();
+const logger = Pino({
+  transport: {
+    target: "pino-pretty",
+    options: {
+      colorize: true, // Colorize the output
+      translateTime: "SYS:standard", // Translate the timestamp to a human-readable format
+      ignore: "pid,hostname", // Hide the pid and hostname fields
+      // messageFormat: '{method} {url} {msg} - {res.statusCode}', // Customize the message format
+    },
+  },
+});
 
 import WebSocket from "ws";
 
@@ -132,19 +142,32 @@ function connectWebSocket() {
 // ========================
 // Graceful shutdown
 // ========================
-process.on("SIGINT", () => {
+process.once("SIGINT", () => {
   logger.info("Shutting down...");
-  if (ws) ws.close();
-  bot.stop();
+  if (ws) {
+    ws.close();
+  }
+  try {
+    bot.stop("SIGINT");
+  } catch (err) {
+    logger.warn(`Error stopping bot: ${err}`);
+  }
   process.exit(0);
 });
 
-process.on("SIGTERM", () => {
+process.once("SIGTERM", () => {
   logger.info("Shutting down...");
-  if (ws) ws.close();
-  bot.stop();
+  if (ws) {
+    ws.close();
+  }
+  try {
+    bot.stop("SIGTERM");
+  } catch (err) {
+    logger.warn(`Error stopping bot: ${err}`);
+  }
   process.exit(0);
 });
 
 // Start
 connectWebSocket();
+bot.launch();

@@ -14,6 +14,7 @@ export default tseslint.config(
       prettier: prettierPlugin,
     },
     rules: {
+      curly: ["error", "allways"],
       "prettier/prettier": "error",
       indent: ["error", "tab", { SwitchCase: 1 }],
       "@typescript-eslint/no-unused-vars": [
