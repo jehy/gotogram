@@ -12,7 +12,13 @@ version: '3.9'
 
 services:
   gotogram:
-    image: ghcr.io/jehy/gotogram/gotogram:latest
+    image: ghcr.io/jehy/gotogram/gotogram:master
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 200M
     environment:
       GOTIFY_WS_URL: wss://gotify.yourdomain.com/stream
       GOTIFY_TOKEN: XXXXX
