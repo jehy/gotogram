@@ -1,6 +1,6 @@
 # Gotogram
 
-![Build](https://github.com/jehy/gotogram/workflows/Build/badge.svg)
+![Test](https://github.com/jehy/gotogram/workflows/Test/badge.svg)
 [![Known Vulnerabilities](https://snyk.io/test/github/jehy/gotogram/badge.svg)](https://snyk.io/test/github/jehy/gotogram)
 
 Simple app to sync messages from gotify to telegram
