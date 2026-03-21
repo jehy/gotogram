@@ -1,5 +1,8 @@
 import { Telegraf } from "telegraf";
 import type { Types } from "telegraf";
+import Logger from "pino";
+
+const logger = Logger();
 
 import WebSocket from "ws";
 
@@ -27,11 +30,11 @@ if (
   !TELEGRAM_BOT_TOKEN ||
   !TELEGRAM_CHAT_ID
 ) {
-  console.error("Missing required environment variables.");
+  logger.error("Missing required environment variables.");
   process.exit(1);
 }
 if (!GOTIFY_WS_URL.endsWith("/stream")) {
-  console.warn(
+  logger.warn(
     'Gotify WebSocket URL should end with "/stream", did you make a mistake?',
   );
 }
@@ -47,9 +50,9 @@ async function sendToTelegram(text: string): Promise<void> {
       messageOptions.message_thread_id = parseInt(TELEGRAM_TOPIC_ID, 10);
     }
     await bot.telegram.sendMessage(TELEGRAM_CHAT_ID, text, messageOptions);
-    console.log("Message sent to Telegram");
+    logger.info("Message sent to Telegram");
   } catch (error) {
-    console.error("Failed to send message to Telegram:", error);
+    logger.error(`Failed to send message to Telegram: ${error}`);
   }
 }
 
@@ -62,7 +65,7 @@ function getPriorityEmoji(priority: number): string {
 
 function formatGotifyMessage(data: GotifyMessage): string {
   if (DEBUG) {
-    console.log(data);
+    logger.info(data);
   }
   const title = data.title || "No title";
   const message = data.message || "";
@@ -80,48 +83,48 @@ const BASE_DELAY_MS = 2000;
 
 function connectWebSocket() {
   const wsUrl = `${GOTIFY_WS_URL}?token=${GOTIFY_TOKEN}`;
-  console.log("Connecting to Gotify WebSocket...");
+  logger.info("Connecting to Gotify WebSocket...");
   ws = new WebSocket(wsUrl);
 
   ws.on("open", () => {
-    console.log("Connected to Gotify WebSocket");
+    logger.info("Connected to Gotify WebSocket");
     reconnectAttempts = 0;
   });
 
   ws.on("message", async (data: WebSocket.Data) => {
-    console.log("got message");
+    logger.info("got message");
     try {
       const parsed = JSON.parse(data.toString());
       // Skip ping messages if needed
       if (parsed.type === "ping") {
-        console.log("that's a ping");
+        logger.info("that's a ping");
         return;
       }
       const text = formatGotifyMessage(parsed);
       await sendToTelegram(text);
     } catch (err) {
-      console.error("Error processing message:", err);
+      logger.error(`Error processing message: ${err}`);
     }
   });
 
   ws.on("error", (err) => {
-    console.error("WebSocket error:", err);
+    logger.error(`WebSocket error: ${err}`);
   });
 
   function scheduleReconnect() {
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      console.error("Max reconnection attempts reached. Exiting.");
+      logger.error("Max reconnection attempts reached. Exiting.");
       process.exit(1);
     }
     const delay = BASE_DELAY_MS * 2 ** reconnectAttempts;
     reconnectAttempts++;
-    console.log(
+    logger.warn(
       `Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`,
     );
     setTimeout(connectWebSocket, delay);
   }
   ws.on("close", (code, reason) => {
-    console.log(`WebSocket closed: ${code} - ${reason}`);
+    logger.info(`WebSocket closed: ${code} - ${reason}`);
     scheduleReconnect();
   });
 }
@@ -130,14 +133,14 @@ function connectWebSocket() {
 // Graceful shutdown
 // ========================
 process.on("SIGINT", () => {
-  console.log("Shutting down...");
+  logger.info("Shutting down...");
   if (ws) ws.close();
   bot.stop();
   process.exit(0);
 });
 
 process.on("SIGTERM", () => {
-  console.log("Shutting down...");
+  logger.info("Shutting down...");
   if (ws) ws.close();
   bot.stop();
   process.exit(0);
