@@ -50,5 +50,5 @@ NodeJS 24+ required.
 
 Plugins:
 
-* https://github.com/anhbh310/gotify2telegram - seems abandoned, and I could not managed forks to work
+* https://github.com/anhbh310/gotify2telegram - seems abandoned, and I could not manage forks to work
 * https://github.com/0xpetersatoshi/gotify-to-telegram - seems abandoned
