@@ -13,6 +13,7 @@ version: '3.9'
 services:
   gotogram:
     image: ghcr.io/jehy/gotogram/gotogram:latest
+    container_name: gotogram
     restart: unless-stopped
     deploy:
       resources:
