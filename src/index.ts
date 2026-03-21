@@ -68,9 +68,9 @@ async function sendToTelegram(text: string): Promise<void> {
 
 function getPriorityEmoji(priority: number): string {
   if (priority >= 8) return "🔴";
-  else if (priority >= 5) return "🟠";
-  else if (priority >= 2) return "🟡";
-  else return "⚪";
+  if (priority >= 5) return "🟠";
+  if (priority >= 2) return "🟡";
+  return "⚪";
 }
 
 function formatGotifyMessage(data: GotifyMessage): string {
@@ -80,9 +80,8 @@ function formatGotifyMessage(data: GotifyMessage): string {
   const title = data.title || "No title";
   const message = data.message || "";
   const priority = data.priority ?? 0;
-  const app = data.appid ? `App: ${data.appid}` : "";
 
-  const formatted = `*${getPriorityEmoji(priority)} ${title}*\n${message}\n\n${app ? `_${app}_` : ""}`;
+  const formatted = `*${getPriorityEmoji(priority)} ${title}*\n${message}}`;
   return formatted.trim();
 }
 
