@@ -68,8 +68,8 @@ async function sendToTelegram(text: string): Promise<void> {
 
 function getPriorityEmoji(priority: number): string {
   if (priority >= 8) return "🔴";
-  if (priority >= 5) return "🟠";
-  if (priority >= 2) return "🟡";
+  if (priority >= 6) return "🟠";
+  if (priority >= 4) return "🟡";
   return "⚪";
 }
 
