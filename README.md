@@ -12,7 +12,7 @@ version: '3.9'
 
 services:
   gotogram:
-    image: ghcr.io/jehy/gotogram/gotogram:master
+    image: ghcr.io/jehy/gotogram/gotogram:latest
     restart: unless-stopped
     deploy:
       resources:
