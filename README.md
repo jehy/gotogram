@@ -57,4 +57,4 @@ NodeJS 24+ required.
 
 **Standalone Apps:**
 
-* https://github.com/Tiagura/gotigram - almost same as this one (gotogram), I didn't manage to google it until I wrote my own :)
+* https://github.com/Tiagura/gotigram - almost same as this one (gotogram), I didn't manage to google it until I wrote my own :) Even the title is simular. It's written in go, so it consumes less resources. Also it's more powerful, but more complex and may be less easy to set up.
