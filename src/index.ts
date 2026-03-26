@@ -1,8 +1,20 @@
 import { Telegraf } from "telegraf";
 import type { Types } from "telegraf";
 import Pino from "pino";
+import WebSocket from "ws";
+
+const GOTIFY_WS_URL = process.env.GOTIFY_WS_URL as string;
+const GOTIFY_TOKEN = process.env.GOTIFY_TOKEN as string;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN as string;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID as string;
+const TELEGRAM_TOPIC_ID = process.env.TELEGRAM_TOPIC_ID as string | undefined; // optional
+
+const MAX_RECONNECT_ATTEMPTS = 10;
+const BASE_DELAY_MS = 2000;
+const MAX_TIME_WITHOUT_PINGS = 60_000; // ping should happen every 45 seconds
 
 const logger = Pino({
+  level: process.env.DEBUG ? "debug" : "info",
   transport: {
     target: "pino-pretty",
     options: {
@@ -14,8 +26,6 @@ const logger = Pino({
   },
 });
 
-import WebSocket from "ws";
-
 type GotifyMessage = {
   id: number;
   type: string;
@@ -26,13 +36,6 @@ type GotifyMessage = {
   date: string;
   extras: Record<string, unknown>;
 };
-
-const GOTIFY_WS_URL = process.env.GOTIFY_WS_URL as string;
-const GOTIFY_TOKEN = process.env.GOTIFY_TOKEN as string;
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN as string;
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID as string;
-const TELEGRAM_TOPIC_ID = process.env.TELEGRAM_TOPIC_ID as string | undefined; // optional
-const DEBUG = !!process.env.DEBUG;
 
 if (
   !GOTIFY_WS_URL ||
@@ -78,9 +81,7 @@ function getPriorityEmoji(priority: number): string {
 }
 
 function formatGotifyMessage(data: GotifyMessage): string {
-  if (DEBUG) {
-    logger.info(data);
-  }
+  logger.debug(data);
   const title = data.title || "No title";
   const message = data.message || "";
   const priority = data.priority ?? 0;
@@ -91,20 +92,44 @@ function formatGotifyMessage(data: GotifyMessage): string {
 
 let ws: WebSocket | null = null;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 10;
-const BASE_DELAY_MS = 2000;
 
 function connectWebSocket() {
+  let pingReceivedDate = Date.now();
+  function heartbeat() {
+    logger.debug("saving heartbeat");
+    pingReceivedDate = Date.now();
+  }
   const wsUrl = `${GOTIFY_WS_URL}?token=${GOTIFY_TOKEN}`;
   logger.info("Connecting to Gotify WebSocket...");
   ws = new WebSocket(wsUrl);
+
+  function checkHeartbeat() {
+    const now = Date.now();
+    const timeWithoutHeartbeat = now - pingReceivedDate;
+    if (timeWithoutHeartbeat > MAX_TIME_WITHOUT_PINGS) {
+      logger.warn(
+        `No heartbeat received in ${timeWithoutHeartbeat / 1000} seconds. Reconnecting...`,
+      );
+      clearInterval(heartbitInterval);
+      ws?.close();
+      scheduleReconnect();
+    }
+  }
+  const heartbitInterval = setInterval(checkHeartbeat, 10_000);
 
   ws.on("open", () => {
     logger.info("Connected to Gotify WebSocket");
     reconnectAttempts = 0;
   });
 
+  ws.on("ping", (data) => {
+    logger.debug("received a ping");
+    heartbeat();
+    (ws as WebSocket).pong(data); // Explicitly respond with pong
+  });
+
   ws.on("message", async (data: WebSocket.Data) => {
+    heartbeat();
     logger.info("got message");
     try {
       const parsed = JSON.parse(data.toString());
