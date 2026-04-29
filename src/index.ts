@@ -95,6 +95,7 @@ let reconnectAttempts = 0;
 
 function connectWebSocket() {
   let pingReceivedDate = Date.now();
+  let reconnectScheduled = false;
   function heartbeat() {
     logger.debug("saving heartbeat");
     pingReceivedDate = Date.now();
@@ -111,6 +112,7 @@ function connectWebSocket() {
         `No heartbeat received in ${timeWithoutHeartbeat / 1000} seconds. Reconnecting...`,
       );
       clearInterval(heartbitInterval);
+      reconnectScheduled = true;
       ws?.close();
       scheduleReconnect();
     }
@@ -163,7 +165,9 @@ function connectWebSocket() {
   }
   ws.on("close", (code, reason) => {
     logger.info(`WebSocket closed: ${code} - ${reason}`);
-    scheduleReconnect();
+    if (!reconnectScheduled) {
+      scheduleReconnect();
+    }
   });
 }
 
