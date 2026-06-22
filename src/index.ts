@@ -2,6 +2,7 @@ import { Telegraf } from "telegraf";
 import type { Types } from "telegraf";
 import Pino from "pino";
 import WebSocket from "ws";
+import fetchRetry from "fetch-retry";
 
 const GOTIFY_WS_URL = process.env.GOTIFY_WS_URL as string;
 const GOTIFY_TOKEN = process.env.GOTIFY_TOKEN as string;
@@ -12,6 +13,14 @@ const TELEGRAM_TOPIC_ID = process.env.TELEGRAM_TOPIC_ID as string | undefined; /
 const MAX_RECONNECT_ATTEMPTS = 10;
 const BASE_DELAY_MS = 2000;
 const MAX_TIME_WITHOUT_PINGS = 60_000; // ping should happen every 45 seconds
+const PHOTO_DOWNLOAD_ATTEMPTS = 3;
+const PHOTO_DOWNLOAD_RETRY_DELAY_MS = 1000;
+
+const retryFetch = fetchRetry(fetch, {
+  retries: PHOTO_DOWNLOAD_ATTEMPTS - 1,
+  retryDelay: (attempt) => PHOTO_DOWNLOAD_RETRY_DELAY_MS * 2 ** attempt,
+  retryOn: (_attempt, error, response) => Boolean(error) || !response?.ok,
+});
 
 const logger = Pino({
   level: process.env.DEBUG ? "debug" : "info",
@@ -58,6 +67,11 @@ if (!GOTIFY_WS_URL.startsWith("ws://") && !GOTIFY_WS_URL.startsWith("wss://")) {
 }
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
+type TelegramPhotoInput = {
+  source: Buffer;
+  filename?: string;
+};
+
 type TelegramMessageOptions = Types.ExtraReplyMessage & {
   photo?: string;
 };
@@ -94,6 +108,35 @@ function extractMarkdownImage(text: string): ParsedMarkdownMessage {
   };
 }
 
+function getFilenameFromUrl(photoUrl: string): string | undefined {
+  try {
+    const pathname = new URL(photoUrl).pathname;
+    const filename = pathname.split("/").filter(Boolean).pop();
+    return filename ? decodeURIComponent(filename) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function downloadTelegramPhoto(
+  photoUrl: string,
+): Promise<TelegramPhotoInput> {
+  logger.debug(`Downloading photo before sending it to Telegram: ${photoUrl}`);
+
+  const response = await retryFetch(photoUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download photo ${photoUrl}: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return {
+    source: Buffer.from(arrayBuffer),
+    filename: getFilenameFromUrl(photoUrl),
+  };
+}
+
 async function sendToTelegram(text: string): Promise<void> {
   const { text: messageText, messageOptions } = extractMarkdownImage(text);
   if (TELEGRAM_TOPIC_ID) {
@@ -102,7 +145,8 @@ async function sendToTelegram(text: string): Promise<void> {
   try {
     if (messageOptions.photo) {
       const { photo, ...photoMessageOptions } = messageOptions;
-      await bot.telegram.sendPhoto(TELEGRAM_CHAT_ID, photo, {
+      const downloadedPhoto = await downloadTelegramPhoto(photo);
+      await bot.telegram.sendPhoto(TELEGRAM_CHAT_ID, downloadedPhoto, {
         ...photoMessageOptions,
         caption: messageText || undefined,
       });
