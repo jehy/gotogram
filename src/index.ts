@@ -162,6 +162,16 @@ async function sendToTelegram(text: string): Promise<void> {
     logger.error(
       `Failed to send message to Telegram: ${error}, message was ${JSON.stringify({ messageText, messageOptions })}`,
     );
+    const failMessageOptions: TelegramMessageOptions = {
+      parse_mode: "Markdown",
+    };
+    await bot.telegram
+      .sendMessage(
+        TELEGRAM_CHAT_ID,
+        "🔴 Failed to send message to Telegram, check gotogram logs",
+        failMessageOptions,
+      )
+      .catch(() => {});
   }
 }
 
