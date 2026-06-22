@@ -95,11 +95,11 @@ function extractMarkdownImage(text: string): ParsedMarkdownMessage {
 }
 
 async function sendToTelegram(text: string): Promise<void> {
+  const { text: messageText, messageOptions } = extractMarkdownImage(text);
+  if (TELEGRAM_TOPIC_ID) {
+    messageOptions.message_thread_id = parseInt(TELEGRAM_TOPIC_ID, 10);
+  }
   try {
-    const { text: messageText, messageOptions } = extractMarkdownImage(text);
-    if (TELEGRAM_TOPIC_ID) {
-      messageOptions.message_thread_id = parseInt(TELEGRAM_TOPIC_ID, 10);
-    }
     if (messageOptions.photo) {
       const { photo, ...photoMessageOptions } = messageOptions;
       await bot.telegram.sendPhoto(TELEGRAM_CHAT_ID, photo, {
@@ -115,7 +115,9 @@ async function sendToTelegram(text: string): Promise<void> {
     }
     logger.info("Message sent to Telegram");
   } catch (error) {
-    logger.error(`Failed to send message to Telegram: ${error}`);
+    logger.error(
+      `Failed to send message to Telegram: ${error}, message was ${JSON.stringify({ messageText, messageOptions })}`,
+    );
   }
 }
 
