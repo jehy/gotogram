@@ -5,6 +5,7 @@ import WebSocket from "ws";
 import fetchRetry from "fetch-retry";
 
 const GOTIFY_WS_URL = process.env.GOTIFY_WS_URL as string;
+const GOTIFY_HTTP_URL = process.env.GOTIFY_HTTP_URL as string | undefined;
 const GOTIFY_TOKEN = process.env.GOTIFY_TOKEN as string;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN as string;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID as string;
@@ -45,6 +46,13 @@ type GotifyMessage = {
   date: string;
   extras: Record<string, unknown>;
 };
+
+type GotifyApplication = {
+  id: number;
+  name: string;
+};
+
+const gotifyApplicationNames = new Map<number, string>();
 
 if (
   !GOTIFY_WS_URL ||
@@ -118,6 +126,65 @@ function getFilenameFromUrl(photoUrl: string): string | undefined {
   }
 }
 
+function getGotifyApplicationsUrl(): string | undefined {
+  if (!GOTIFY_HTTP_URL) {
+    return undefined;
+  }
+
+  const url = new URL(
+    "application",
+    GOTIFY_HTTP_URL.endsWith("/") ? GOTIFY_HTTP_URL : `${GOTIFY_HTTP_URL}/`,
+  );
+  url.searchParams.set("token", GOTIFY_TOKEN);
+  return url.toString();
+}
+
+function isGotifyApplication(value: unknown): value is GotifyApplication {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as GotifyApplication).id === "number" &&
+    typeof (value as GotifyApplication).name === "string"
+  );
+}
+
+async function loadGotifyApplications(): Promise<void> {
+  const applicationsUrl = getGotifyApplicationsUrl();
+  if (!applicationsUrl) {
+    logger.info(
+      "GOTIFY_HTTP_URL is not set, Gotify application names won't be loaded",
+    );
+    return;
+  }
+
+  logger.info(`Loading Gotify applications from ${applicationsUrl}`);
+  const response = await retryFetch(applicationsUrl);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to load Gotify applications: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const applications: unknown = await response.json();
+  if (!Array.isArray(applications)) {
+    throw new Error(
+      "Failed to load Gotify applications: response is not an array",
+    );
+  }
+
+  gotifyApplicationNames.clear();
+  for (const application of applications) {
+    if (isGotifyApplication(application)) {
+      gotifyApplicationNames.set(application.id, application.name);
+    } else {
+      logger.warn(
+        `Skipping invalid Gotify application: ${JSON.stringify(application)}`,
+      );
+    }
+  }
+  logger.info(`Loaded ${gotifyApplicationNames.size} Gotify applications`);
+}
+
 async function downloadTelegramPhoto(
   photoUrl: string,
 ): Promise<TelegramPhotoInput> {
@@ -187,8 +254,10 @@ function formatGotifyMessage(data: GotifyMessage): string {
   const title = data.title || "No title";
   const message = data.message || "";
   const priority = data.priority ?? 0;
+  const applicationName = gotifyApplicationNames.get(data.appid);
+  const applicationPrefix = applicationName ? `[${applicationName}] ` : "";
 
-  const formatted = `*${getPriorityEmoji(priority)} ${title}*\n${message}`;
+  const formatted = `*${getPriorityEmoji(priority)} ${applicationPrefix}${title}*\n${message}`;
   return formatted.trim();
 }
 
@@ -292,5 +361,15 @@ process.once("SIGTERM", () => {
   process.exit(0);
 });
 
+async function start(): Promise<void> {
+  try {
+    await loadGotifyApplications();
+  } catch (error) {
+    logger.error(`Failed to load Gotify applications: ${error}`);
+  }
+
+  connectWebSocket();
+}
+
 // Start
-connectWebSocket();
+void start();
