@@ -58,15 +58,61 @@ if (!GOTIFY_WS_URL.startsWith("ws://") && !GOTIFY_WS_URL.startsWith("wss://")) {
 }
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
+type TelegramMessageOptions = Types.ExtraReplyMessage & {
+  photo?: string;
+};
+
+type ParsedMarkdownMessage = {
+  text: string;
+  messageOptions: TelegramMessageOptions;
+};
+
+function extractMarkdownImage(text: string): ParsedMarkdownMessage {
+  const messageOptions: TelegramMessageOptions = {
+    parse_mode: "Markdown",
+  };
+  const imagePattern =
+    /!\[[^\]]*]\(\s*(<[^>]+>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
+  let firstImageFound = false;
+  const messageText = text
+    .replace(imagePattern, (match: string, rawPhoto: string) => {
+      if (!firstImageFound) {
+        firstImageFound = true;
+        messageOptions.photo =
+          rawPhoto.startsWith("<") && rawPhoto.endsWith(">")
+            ? rawPhoto.slice(1, -1)
+            : rawPhoto;
+      }
+      return "";
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return {
+    text: messageText,
+    messageOptions,
+  };
+}
+
 async function sendToTelegram(text: string): Promise<void> {
   try {
-    const messageOptions: Types.ExtraReplyMessage = {
-      parse_mode: "Markdown",
-    };
+    const { text: messageText, messageOptions } = extractMarkdownImage(text);
     if (TELEGRAM_TOPIC_ID) {
       messageOptions.message_thread_id = parseInt(TELEGRAM_TOPIC_ID, 10);
     }
-    await bot.telegram.sendMessage(TELEGRAM_CHAT_ID, text, messageOptions);
+    if (messageOptions.photo) {
+      const { photo, ...photoMessageOptions } = messageOptions;
+      await bot.telegram.sendPhoto(TELEGRAM_CHAT_ID, photo, {
+        ...photoMessageOptions,
+        caption: messageText || undefined,
+      });
+    } else {
+      await bot.telegram.sendMessage(
+        TELEGRAM_CHAT_ID,
+        messageText,
+        messageOptions,
+      );
+    }
     logger.info("Message sent to Telegram");
   } catch (error) {
     logger.error(`Failed to send message to Telegram: ${error}`);
