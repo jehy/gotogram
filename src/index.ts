@@ -249,15 +249,30 @@ function getPriorityEmoji(priority: number): string {
   return "⚪";
 }
 
+function formatAppName(appName: string | undefined, title: string) {
+  if (appName === title) {
+    return "";
+  }
+  return appName ? `[${appName}] ` : "";
+}
+
 function formatGotifyMessage(data: GotifyMessage): string {
   logger.debug(data);
   const title = data.title || "No title";
   const message = data.message || "";
   const priority = data.priority ?? 0;
   const applicationName = gotifyApplicationNames.get(data.appid);
-  const applicationPrefix = applicationName ? `[${applicationName}] ` : "";
 
-  const formatted = `*${getPriorityEmoji(priority)} ${applicationPrefix}${title}*\n${message}`;
+  const formatted = [
+    `*`,
+    getPriorityEmoji(priority),
+    formatAppName(applicationName, title),
+    title,
+    "*\n",
+    message,
+  ]
+    .filter((el) => el)
+    .join(" ");
   return formatted.trim();
 }
 

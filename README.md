@@ -22,6 +22,7 @@ services:
           memory: 200M
     environment:
       GOTIFY_WS_URL: wss://gotify.yourdomain.com/stream #websocket gotify url, should start from ws if http, and from wss if https. Should end with /stream.
+      GOTIFY_HTTP_URL: https://gotify.yourdomain.com #http(s) gotify url for fetching app list (optional)
       GOTIFY_TOKEN: XXXXX
       TELEGRAM_BOT_TOKEN: XXX:YYY
       TELEGRAM_CHAT_ID: xxx
