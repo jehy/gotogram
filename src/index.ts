@@ -3,6 +3,7 @@ import type { Types } from "telegraf";
 import Pino from "pino";
 import WebSocket from "ws";
 import fetchRetry from "fetch-retry";
+import { escapers } from "@telegraf/entity";
 
 const GOTIFY_WS_URL = process.env.GOTIFY_WS_URL as string;
 const GOTIFY_HTTP_URL = process.env.GOTIFY_HTTP_URL as string | undefined;
@@ -229,16 +230,21 @@ async function sendToTelegram(text: string): Promise<void> {
     logger.error(
       `Failed to send message to Telegram: ${error}, message was ${JSON.stringify({ messageText, messageOptions })}`,
     );
-    const failMessageOptions: TelegramMessageOptions = {
-      parse_mode: "Markdown",
-    };
-    await bot.telegram
-      .sendMessage(
+    try {
+      await bot.telegram.sendMessage(
         TELEGRAM_CHAT_ID,
-        "🔴 Failed to send message to Telegram, check gotogram logs",
-        failMessageOptions,
-      )
-      .catch(() => {});
+        `Failed to send message as is. Stripped version:\n ${escapers.MarkdownV2(text)}`,
+        messageOptions,
+      );
+    } catch {
+      await bot.telegram
+        .sendMessage(
+          TELEGRAM_CHAT_ID,
+          "🔴 Failed to send message to Telegram, check gotogram logs",
+          { parse_mode: "Markdown" },
+        )
+        .catch(() => {});
+    }
   }
 }
 

@@ -4,3 +4,4 @@ config/config.json
 config/runtime.json
 coverage
 .nyc_output
+dist
