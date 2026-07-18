@@ -4,6 +4,7 @@ import Pino from "pino";
 import WebSocket from "ws";
 import fetchRetry from "fetch-retry";
 import { escapers } from "@telegraf/entity";
+import { convert as tgMdV2ConverV2Convert } from "telegram-markdown-v2";
 
 const GOTIFY_WS_URL = process.env.GOTIFY_WS_URL as string;
 const GOTIFY_HTTP_URL = process.env.GOTIFY_HTTP_URL as string | undefined;
@@ -24,6 +25,11 @@ const retryFetch = fetchRetry(fetch, {
   retryOn: (_attempt, error, response) => Boolean(error) || !response?.ok,
 });
 
+const sendAttempts = {
+  first: 0,
+  fallbackToMdConvertor: 1,
+  fallbackToStripAll: 2,
+};
 const logger = Pino({
   level: process.env.DEBUG ? "debug" : "info",
   transport: {
@@ -37,11 +43,11 @@ const logger = Pino({
   },
 });
 
-type GotifyMessage = {
+export type GotifyMessage = {
   id: number;
-  type: string;
+  type?: string;
   title?: string;
-  message: string;
+  message: string | undefined;
   priority: number;
   appid: number;
   date: string;
@@ -55,26 +61,32 @@ type GotifyApplication = {
 
 const gotifyApplicationNames = new Map<number, string>();
 
-if (
-  !GOTIFY_WS_URL ||
-  !GOTIFY_TOKEN ||
-  !TELEGRAM_BOT_TOKEN ||
-  !TELEGRAM_CHAT_ID
-) {
-  logger.error("Missing required environment variables.");
-  process.exit(1);
+function validateConfig(): void {
+  if (
+    !GOTIFY_WS_URL ||
+    !GOTIFY_TOKEN ||
+    !TELEGRAM_BOT_TOKEN ||
+    !TELEGRAM_CHAT_ID
+  ) {
+    logger.error("Missing required environment variables.");
+    process.exit(1);
+  }
+  if (!GOTIFY_WS_URL.endsWith("/stream")) {
+    logger.warn(
+      'Gotify WebSocket URL should end with "/stream", did you make a mistake?',
+    );
+  }
+  if (
+    !GOTIFY_WS_URL.startsWith("ws://") &&
+    !GOTIFY_WS_URL.startsWith("wss://")
+  ) {
+    logger.warn(
+      'Gotify WebSocket URL should start with "ws://" or "wss://", did you make a mistake?',
+    );
+  }
 }
-if (!GOTIFY_WS_URL.endsWith("/stream")) {
-  logger.warn(
-    'Gotify WebSocket URL should end with "/stream", did you make a mistake?',
-  );
-}
-if (!GOTIFY_WS_URL.startsWith("ws://") && !GOTIFY_WS_URL.startsWith("wss://")) {
-  logger.warn(
-    'Gotify WebSocket URL should start with "ws://" or "wss://", did you make a mistake?',
-  );
-}
-const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
+
+const bot = new Telegraf(TELEGRAM_BOT_TOKEN || "test-token");
 
 type TelegramPhotoInput = {
   source: Buffer;
@@ -87,21 +99,21 @@ type TelegramMessageOptions = Types.ExtraReplyMessage & {
 
 type ParsedMarkdownMessage = {
   text: string;
-  messageOptions: TelegramMessageOptions;
+  photo: string | undefined;
 };
 
-function extractMarkdownImage(text: string): ParsedMarkdownMessage {
-  const messageOptions: TelegramMessageOptions = {
-    parse_mode: "Markdown",
-  };
+export function extractMarkdownImage(
+  text: string | undefined,
+): ParsedMarkdownMessage {
+  let photo = undefined as string | undefined;
   const imagePattern =
-    /!\[[^\]]*]\(\s*(<[^>]+>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/g;
+    /(?:\[\s*)?!\[[^\]]*]\(\s*(<[^>]+>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\)(?:\s*]\(\s*(?:<[^>]+>|[^\s)]+)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*\))?/g;
   let firstImageFound = false;
-  const messageText = text
+  const messageText = (text || "")
     .replace(imagePattern, (match: string, rawPhoto: string) => {
       if (!firstImageFound) {
         firstImageFound = true;
-        messageOptions.photo =
+        photo =
           rawPhoto.startsWith("<") && rawPhoto.endsWith(">")
             ? rawPhoto.slice(1, -1)
             : rawPhoto;
@@ -113,7 +125,7 @@ function extractMarkdownImage(text: string): ParsedMarkdownMessage {
 
   return {
     text: messageText,
-    messageOptions,
+    photo,
   };
 }
 
@@ -199,75 +211,98 @@ async function downloadTelegramPhoto(
   }
 
   const arrayBuffer = await response.arrayBuffer();
+  logger.debug(`Downloaded photo ${photoUrl}`);
   return {
     source: Buffer.from(arrayBuffer),
     filename: getFilenameFromUrl(photoUrl),
   };
 }
 
-async function sendToTelegram(text: string): Promise<void> {
-  const { text: messageText, messageOptions } = extractMarkdownImage(text);
+async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
+  const { text: gotifyMessageText, photo } = extractMarkdownImage(
+    gotifyMessage.message,
+  );
+  let sendAttempt = 0;
+  let sent = false;
+
+  const messageOptions: TelegramMessageOptions = {
+    parse_mode: "MarkdownV2",
+  };
   if (TELEGRAM_TOPIC_ID) {
     messageOptions.message_thread_id = parseInt(TELEGRAM_TOPIC_ID, 10);
   }
-  try {
-    if (messageOptions.photo) {
-      const { photo, ...photoMessageOptions } = messageOptions;
-      const downloadedPhoto = await downloadTelegramPhoto(photo);
-      await bot.telegram.sendPhoto(TELEGRAM_CHAT_ID, downloadedPhoto, {
-        ...photoMessageOptions,
-        caption: messageText || undefined,
-      });
-    } else {
-      await bot.telegram.sendMessage(
-        TELEGRAM_CHAT_ID,
-        messageText,
-        messageOptions,
-      );
-    }
-    logger.info("Message sent to Telegram");
-  } catch (error) {
-    logger.error(
-      `Failed to send message to Telegram: ${error}, message was ${JSON.stringify({ messageText, messageOptions })}`,
+  const downloadedPhoto = photo
+    ? await downloadTelegramPhoto(photo)
+    : undefined;
+  while (sendAttempt <= sendAttempts.fallbackToStripAll) {
+    const messageText = formatGotifyMessage(
+      { ...gotifyMessage, message: gotifyMessageText },
+      photo,
+      sendAttempt,
     );
     try {
-      await bot.telegram.sendMessage(
-        TELEGRAM_CHAT_ID,
-        `Failed to send message as is. Stripped version:\n ${escapers.MarkdownV2(text)}`,
-        messageOptions,
-      );
-    } catch {
-      await bot.telegram
-        .sendMessage(
+      if (downloadedPhoto && sendAttempt !== sendAttempts.fallbackToStripAll) {
+        await bot.telegram.sendPhoto(TELEGRAM_CHAT_ID, downloadedPhoto, {
+          ...messageOptions,
+          caption: messageText || undefined,
+        });
+      } else {
+        await bot.telegram.sendMessage(
           TELEGRAM_CHAT_ID,
-          "🔴 Failed to send message to Telegram, check gotogram logs",
-          { parse_mode: "Markdown" },
-        )
-        .catch(() => {});
+          messageText,
+          messageOptions,
+        );
+      }
+      logger.info("Message sent to Telegram");
+      sent = true;
+    } catch (error) {
+      logger.error(
+        `Failed to send message to Telegram: ${error}, message was ${JSON.stringify({ sendAttempt, gotifyMessage, messageText, messageOptions })}`,
+      );
     }
+    sendAttempt++;
+  }
+  if (!sent) {
+    await bot.telegram
+      .sendMessage(
+        TELEGRAM_CHAT_ID,
+        "🔴 Failed to send message to Telegram, check gotogram logs",
+        { parse_mode: "MarkdownV2" },
+      )
+      .catch(() => {});
   }
 }
 
-function getPriorityEmoji(priority: number): string {
+export function getPriorityEmoji(priority: number): string {
   if (priority >= 8) return "🔴";
   if (priority >= 6) return "🟠";
   if (priority >= 4) return "🟡";
   return "⚪";
 }
 
-function formatAppName(appName: string | undefined, title: string) {
+export function formatAppName(appName: string | undefined, title: string) {
   if (appName === title) {
     return "";
   }
   return appName ? `[${appName}] ` : "";
 }
 
-function formatGotifyMessage(data: GotifyMessage): string {
+export function formatGotifyMessage(
+  data: GotifyMessage,
+  photo: string | undefined,
+  sendAttempt: number,
+): string {
   logger.debug(data);
-  const title = data.title || "No title";
-  const message = data.message || "";
+  const title = escapers.MarkdownV2(data.title || "No title");
+  let message = data.message || "";
   const priority = data.priority ?? 0;
   const applicationName = gotifyApplicationNames.get(data.appid);
+  if (sendAttempt === sendAttempts.fallbackToMdConvertor) {
+    message = tgMdV2ConverV2Convert(message);
+  } else if (sendAttempt === sendAttempts.fallbackToStripAll) {
+    // we avoid inlining image on third attempt because it may cause fails
+    message = `${escapers.MarkdownV2(message)}\n${escapers.MarkdownV2(photo ?? "")}`;
+  }
 
   const formatted = [
     `*`,
@@ -275,10 +310,12 @@ function formatGotifyMessage(data: GotifyMessage): string {
     formatAppName(applicationName, title),
     title,
     "*\n",
+    sendAttempt > 0 ? `RetryMode: ${sendAttempt}\n` : "",
     message,
   ]
     .filter((el) => el)
     .join(" ");
+
   return formatted.trim();
 }
 
@@ -326,14 +363,13 @@ function connectWebSocket() {
     heartbeat();
     logger.info("got message");
     try {
-      const parsed = JSON.parse(data.toString());
+      const parsed = JSON.parse(data.toString()) as GotifyMessage;
       // Skip ping messages if needed
       if (parsed.type === "ping") {
         logger.info("that's a ping");
         return;
       }
-      const text = formatGotifyMessage(parsed);
-      await sendToTelegram(text);
+      await sendToTelegram(parsed);
     } catch (err) {
       logger.error(`Error processing message: ${err}`);
     }
@@ -366,23 +402,28 @@ function connectWebSocket() {
 // ========================
 // Graceful shutdown
 // ========================
-process.once("SIGINT", () => {
-  logger.info("Shutting down...");
-  if (ws) {
-    ws.close();
-  }
-  process.exit(0);
-});
+function registerGracefulShutdown(): void {
+  process.once("SIGINT", () => {
+    logger.info("Shutting down...");
+    if (ws) {
+      ws.close();
+    }
+    process.exit(0);
+  });
 
-process.once("SIGTERM", () => {
-  logger.info("Shutting down...");
-  if (ws) {
-    ws.close();
-  }
-  process.exit(0);
-});
+  process.once("SIGTERM", () => {
+    logger.info("Shutting down...");
+    if (ws) {
+      ws.close();
+    }
+    process.exit(0);
+  });
+}
 
-async function start(): Promise<void> {
+export async function start(): Promise<void> {
+  validateConfig();
+  registerGracefulShutdown();
+
   try {
     await loadGotifyApplications();
   } catch (error) {
@@ -392,5 +433,6 @@ async function start(): Promise<void> {
   connectWebSocket();
 }
 
-// Start
-void start();
+if (import.meta.url === `file://${process.argv[1]}`) {
+  void start();
+}
