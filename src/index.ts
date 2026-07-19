@@ -1,4 +1,4 @@
-import { Telegraf } from "telegraf";
+import { Input, Telegraf } from "telegraf";
 import type { Types } from "telegraf";
 import Pino from "pino";
 import WebSocket from "ws";
@@ -18,6 +18,8 @@ const BASE_DELAY_MS = 2000;
 const MAX_TIME_WITHOUT_PINGS = 60_000; // ping should happen every 45 seconds
 const PHOTO_DOWNLOAD_ATTEMPTS = 3;
 const PHOTO_DOWNLOAD_RETRY_DELAY_MS = 1000;
+
+const TELEGRAM_MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 
 const retryFetch = fetchRetry(fetch, {
   retries: PHOTO_DOWNLOAD_ATTEMPTS - 1,
@@ -96,6 +98,9 @@ const bot = new Telegraf(TELEGRAM_BOT_TOKEN, {
 type TelegramPhotoInput = {
   source: Buffer;
   filename?: string;
+  contentType?: string;
+  contentLength?: number;
+  magicBytes: string;
 };
 
 type TelegramMessageOptions = Types.ExtraReplyMessage & {
@@ -141,6 +146,23 @@ function getFilenameFromUrl(photoUrl: string): string | undefined {
     return filename ? decodeURIComponent(filename) : undefined;
   } catch {
     return undefined;
+  }
+}
+
+function getDefaultPhotoFilename(contentType: string | undefined): string {
+  const mimeType = contentType?.split(";", 1)[0].trim().toLowerCase();
+  switch (mimeType) {
+    case "image/jpeg":
+    case "image/jpg":
+      return "gotify-photo.jpg";
+    case "image/png":
+      return "gotify-photo.png";
+    case "image/gif":
+      return "gotify-photo.gif";
+    case "image/webp":
+      return "gotify-photo.webp";
+    default:
+      return "gotify-photo.jpg";
   }
 }
 
@@ -203,10 +225,32 @@ async function loadGotifyApplications(): Promise<void> {
   logger.info(`Loaded ${gotifyApplicationNames.size} Gotify applications`);
 }
 
+function getErrorDetails(error: unknown): Record<string, unknown> {
+  if (!(error instanceof Error)) {
+    return { value: error };
+  }
+
+  const details: Record<string, unknown> = {
+    name: error.name,
+    message: error.message,
+    stack: error.stack,
+  };
+
+  for (const key of Object.getOwnPropertyNames(error)) {
+    details[key] = (error as unknown as Record<string, unknown>)[key];
+  }
+
+  if ("cause" in error) {
+    details.cause = getErrorDetails(error.cause);
+  }
+
+  return details;
+}
+
 async function downloadTelegramPhoto(
   photoUrl: string,
 ): Promise<TelegramPhotoInput> {
-  logger.debug(`Downloading photo before sending it to Telegram: ${photoUrl}`);
+  logger.debug({ photoUrl }, "Downloading photo before sending it to Telegram");
 
   const response = await retryFetch(photoUrl);
   if (!response.ok) {
@@ -215,11 +259,44 @@ async function downloadTelegramPhoto(
     );
   }
 
+  const contentType = response.headers.get("content-type") ?? undefined;
+  const contentLengthHeader = response.headers.get("content-length");
+  const contentLength = contentLengthHeader
+    ? Number.parseInt(contentLengthHeader, 10)
+    : undefined;
   const arrayBuffer = await response.arrayBuffer();
-  logger.debug(`Downloaded photo ${photoUrl}`);
+  const source = Buffer.from(arrayBuffer);
+  const photoDetails = {
+    photoUrl,
+    contentType,
+    contentLength,
+    actualSize: source.length,
+    filename:
+      getFilenameFromUrl(photoUrl) ?? getDefaultPhotoFilename(contentType),
+    magicBytes: source.subarray(0, 16).toString("hex"),
+  };
+
+  if (!contentType?.startsWith("image/")) {
+    logger.warn(
+      photoDetails,
+      "Downloaded photo response does not look like an image by Content-Type",
+    );
+  }
+
+  if (source.length > TELEGRAM_MAX_PHOTO_BYTES) {
+    logger.warn(
+      photoDetails,
+      "Downloaded photo is larger than Telegram sendPhoto limit and will likely fail",
+    );
+  }
+
+  logger.debug(photoDetails, "Downloaded photo");
   return {
-    source: Buffer.from(arrayBuffer),
-    filename: getFilenameFromUrl(photoUrl),
+    source,
+    filename: photoDetails.filename,
+    contentType,
+    contentLength,
+    magicBytes: photoDetails.magicBytes,
   };
 }
 
@@ -246,11 +323,31 @@ async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
       sendAttempt,
     );
     try {
-      if (downloadedPhoto && sendAttempt !== sendAttempts.fallbackToStripAll) {
-        await bot.telegram.sendPhoto(TELEGRAM_CHAT_ID, downloadedPhoto, {
-          ...messageOptions,
-          caption: messageText || undefined,
-        });
+      const canSendPhoto =
+        downloadedPhoto &&
+        downloadedPhoto.source.length <= TELEGRAM_MAX_PHOTO_BYTES;
+      if (canSendPhoto && sendAttempt !== sendAttempts.fallbackToStripAll) {
+        logger.debug(
+          {
+            sendAttempt,
+            filename: downloadedPhoto.filename,
+            contentType: downloadedPhoto.contentType,
+            contentLength: downloadedPhoto.contentLength,
+            actualSize: downloadedPhoto.source.length,
+            magicBytes: downloadedPhoto.magicBytes,
+            messageOptions,
+            captionLength: messageText.length,
+          },
+          "Sending photo to Telegram",
+        );
+        await bot.telegram.sendPhoto(
+          TELEGRAM_CHAT_ID,
+          Input.fromBuffer(downloadedPhoto.source, downloadedPhoto.filename),
+          {
+            ...messageOptions,
+            caption: messageText || undefined,
+          },
+        );
       } else {
         await bot.telegram.sendMessage(
           TELEGRAM_CHAT_ID,
@@ -262,7 +359,23 @@ async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
       sent = true;
     } catch (error) {
       logger.error(
-        `Failed to send message to Telegram: ${error}, message was ${JSON.stringify({ sendAttempt, gotifyMessage, messageText, messageOptions })}`,
+        {
+          error: getErrorDetails(error),
+          sendAttempt,
+          gotifyMessage,
+          messageText,
+          messageOptions,
+          photoDetails: downloadedPhoto
+            ? {
+                filename: downloadedPhoto.filename,
+                contentType: downloadedPhoto.contentType,
+                contentLength: downloadedPhoto.contentLength,
+                actualSize: downloadedPhoto.source.length,
+                magicBytes: downloadedPhoto.magicBytes,
+              }
+            : undefined,
+        },
+        "Failed to send message to Telegram",
       );
     }
     sendAttempt++;
@@ -376,12 +489,12 @@ function connectWebSocket() {
       }
       await sendToTelegram(parsed);
     } catch (err) {
-      logger.error(`Error processing message: ${err}`);
+      logger.error({ error: getErrorDetails(err) }, "Error processing message");
     }
   });
 
   ws.on("error", (err) => {
-    logger.error(`WebSocket error: ${err}`);
+    logger.error({ error: getErrorDetails(err) }, "WebSocket error");
   });
 
   function scheduleReconnect() {
