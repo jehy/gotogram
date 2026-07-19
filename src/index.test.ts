@@ -90,7 +90,7 @@ describe("formatGotifyMessage", () => {
       "* ⚪ New tag found for container gotogram *\n Container gotogram running with tag 1.0.9 can be updated to tag 1.0.14",
     );
     expect(formatGotifyMessage(message, undefined, 1)).toBe(
-      "* ⚪ New tag found for container gotogram *\n RetryMode: 1\n Container gotogram running with tag 1\\.0\\.9 can be updated to tag 1\\.0\\.14",
+      "* ⚪ New tag found for container gotogram *\n Container gotogram running with tag 1\\.0\\.9 can be updated to tag 1\\.0\\.14",
     );
     expect(formatGotifyMessage(message, undefined, 2)).toBe(
       "* ⚪ New tag found for container gotogram *\n RetryMode: 2\n Container gotogram running with tag 1\\.0\\.9 can be updated to tag 1\\.0\\.14",

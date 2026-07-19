@@ -222,7 +222,7 @@ async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
   const { text: gotifyMessageText, photo } = extractMarkdownImage(
     gotifyMessage.message,
   );
-  let sendAttempt = 0;
+  let sendAttempt = 1; // dont even try to send without fallback
   let sent = false;
 
   const messageOptions: TelegramMessageOptions = {
@@ -310,7 +310,7 @@ export function formatGotifyMessage(
     formatAppName(applicationName, title),
     title,
     "*\n",
-    sendAttempt > 0 ? `RetryMode: ${sendAttempt}\n` : "",
+    sendAttempt > 1 ? `RetryMode: ${sendAttempt}\n` : "",
     message,
   ]
     .filter((el) => el)
