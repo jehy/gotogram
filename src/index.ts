@@ -86,7 +86,12 @@ function validateConfig(): void {
   }
 }
 
-const bot = new Telegraf(TELEGRAM_BOT_TOKEN || "test-token");
+const bot = new Telegraf(TELEGRAM_BOT_TOKEN, {
+  telegram: {
+    webhookReply: false, // Disabling webhook reply can often stabilize file transfers
+  },
+  handlerTimeout: 10000, // Increase timeout limits to 10 seconds
+});
 
 type TelegramPhotoInput = {
   source: Buffer;
