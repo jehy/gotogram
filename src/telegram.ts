@@ -1,5 +1,5 @@
 import type { Telegraf, Types } from "telegraf";
-import { gotifyApplicationNames, GotifyMessage } from "./gotify.js";
+import { gotifyApplicationNames, type GotifyMessage } from "./gotify.ts";
 import {
   extractMarkdownImage,
   formatAppName,
@@ -9,10 +9,10 @@ import {
   getPriorityEmoji,
   logger,
   retryFetch,
-} from "./generic.js";
+} from "./generic.ts";
 import { escapers } from "@telegraf/entity";
 import { convert as tgMdV2ConverV2Convert } from "telegram-markdown-v2";
-import config from "./config.js";
+import config from "./config.ts";
 
 type TelegramPhotoInput = {
   source: Buffer;

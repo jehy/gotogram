@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { type GotifyMessage } from "./gotify.js";
-import { formatGotifyMessage } from "./telegram.js";
+import { type GotifyMessage } from "./gotify.ts";
+import { formatGotifyMessage } from "./telegram.ts";
 
 describe("formatGotifyMessage", () => {
   it("formats the provided camera movement message", () => {

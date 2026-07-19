@@ -1,5 +1,5 @@
-import config from "./config.js";
-import { logger, retryFetch } from "./generic.js";
+import config from "./config.ts";
+import { logger, retryFetch } from "./generic.ts";
 
 export type GotifyMessage = {
   id: number;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extractMarkdownImage, getPriorityEmoji } from "./generic.js";
+import { extractMarkdownImage, getPriorityEmoji } from "./generic.ts";
 
 describe("extractMarkdownImage", () => {
   it("extracts a standalone markdown image and removes it from text", () => {

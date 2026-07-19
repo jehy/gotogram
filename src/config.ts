@@ -1,4 +1,4 @@
-import { logger } from "./generic.js";
+import { logger } from "./generic.ts";
 
 const GOTIFY_WS_URL = process.env.GOTIFY_WS_URL as string;
 const GOTIFY_HTTP_URL = process.env.GOTIFY_HTTP_URL as string | undefined;

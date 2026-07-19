@@ -1,9 +1,9 @@
 import { Telegraf } from "telegraf";
 import WebSocket from "ws";
-import { getErrorDetails, logger } from "./generic.js";
-import { config, validateConfig } from "./config.js";
-import { GotifyMessage, loadGotifyApplications } from "./gotify.js";
-import { sendToTelegram } from "./telegram.js";
+import { getErrorDetails, logger } from "./generic.ts";
+import { config, validateConfig } from "./config.ts";
+import { type GotifyMessage, loadGotifyApplications } from "./gotify.ts";
+import { sendToTelegram } from "./telegram.ts";
 
 const bot = new Telegraf(config.TELEGRAM_BOT_TOKEN, {
   telegram: {
