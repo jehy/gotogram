@@ -104,6 +104,12 @@ type TelegramPhotoInput = {
   magicBytes: string;
 };
 
+type TelegramApiErrorDetails = {
+  ok: false;
+  error_code?: number;
+  description?: string;
+};
+
 type TelegramMessageOptions = Types.ExtraReplyMessage & {
   photo?: string;
 };
@@ -302,6 +308,63 @@ async function downloadTelegramPhoto(
   };
 }
 
+async function sendTelegramPhotoWithNativeFetch(
+  chatId: string,
+  photo: TelegramPhotoInput,
+  options: TelegramMessageOptions,
+  caption: string | undefined,
+): Promise<void> {
+  const form = new FormData();
+  form.set("chat_id", chatId);
+  form.set(
+    "photo",
+    new Blob([new Uint8Array(photo.source)], {
+      type: photo.contentType ?? "application/octet-stream",
+    }),
+    photo.filename ?? getDefaultPhotoFilename(photo.contentType),
+  );
+
+  if (caption) {
+    form.set("caption", caption);
+  }
+
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined) {
+      form.set(key, String(value));
+    }
+  }
+
+  const response = await fetch(
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`,
+    {
+      method: "POST",
+      body: form,
+    },
+  );
+  const responseBody = (await response.json().catch(() => undefined)) as
+    TelegramApiErrorDetails | undefined;
+
+  if (!response.ok || responseBody?.ok === false) {
+    const error = new Error(
+      `${response.status}: ${response.statusText}${responseBody?.description ? `: ${responseBody.description}` : ""}`,
+    );
+    Object.assign(error, {
+      response: responseBody,
+      on: {
+        method: "sendPhoto",
+        payload: {
+          chat_id: chatId,
+          photo: photo.filename,
+          parse_mode: options.parse_mode,
+          message_thread_id: options.message_thread_id,
+          caption,
+        },
+      },
+    });
+    throw error;
+  }
+}
+
 async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
   const { text: gotifyMessageText, photo } = extractMarkdownImage(
     gotifyMessage.message,
@@ -332,7 +395,7 @@ async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
         logger.debug(
           {
             sendAttempt,
-            transport: "telegram-url-fetch",
+            transport: "native-fetch-multipart",
             photoUrl: downloadedPhoto.url,
             filename: downloadedPhoto.filename,
             contentType: downloadedPhoto.contentType,
@@ -344,10 +407,12 @@ async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
           },
           "Sending photo to Telegram",
         );
-        await bot.telegram.sendPhoto(TELEGRAM_CHAT_ID, downloadedPhoto.url, {
-          ...messageOptions,
-          caption: messageText || undefined,
-        });
+        await sendTelegramPhotoWithNativeFetch(
+          TELEGRAM_CHAT_ID,
+          downloadedPhoto,
+          messageOptions,
+          messageText || undefined,
+        );
       } else {
         await bot.telegram.sendMessage(
           TELEGRAM_CHAT_ID,
@@ -367,7 +432,7 @@ async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
           messageOptions,
           photoDetails: downloadedPhoto
             ? {
-                transport: "telegram-url-fetch",
+                transport: "native-fetch-multipart",
                 photoUrl: downloadedPhoto.url,
                 filename: downloadedPhoto.filename,
                 contentType: downloadedPhoto.contentType,
