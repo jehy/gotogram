@@ -412,7 +412,7 @@ async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
           downloadedPhoto,
           messageOptions,
           messageText || undefined,
-        );
+        ); // native telegraf sendPhoto does not work for me, I get `socket hang up`
       } else {
         await bot.telegram.sendMessage(
           TELEGRAM_CHAT_ID,
