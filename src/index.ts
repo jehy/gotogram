@@ -1,4 +1,4 @@
-import { Input, Telegraf } from "telegraf";
+import { Telegraf } from "telegraf";
 import type { Types } from "telegraf";
 import Pino from "pino";
 import WebSocket from "ws";
@@ -97,6 +97,7 @@ const bot = new Telegraf(TELEGRAM_BOT_TOKEN, {
 
 type TelegramPhotoInput = {
   source: Buffer;
+  url: string;
   filename?: string;
   contentType?: string;
   contentLength?: number;
@@ -293,6 +294,7 @@ async function downloadTelegramPhoto(
   logger.debug(photoDetails, "Downloaded photo");
   return {
     source,
+    url: photoUrl,
     filename: photoDetails.filename,
     contentType,
     contentLength,
@@ -330,6 +332,8 @@ async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
         logger.debug(
           {
             sendAttempt,
+            transport: "telegram-url-fetch",
+            photoUrl: downloadedPhoto.url,
             filename: downloadedPhoto.filename,
             contentType: downloadedPhoto.contentType,
             contentLength: downloadedPhoto.contentLength,
@@ -340,14 +344,10 @@ async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
           },
           "Sending photo to Telegram",
         );
-        await bot.telegram.sendPhoto(
-          TELEGRAM_CHAT_ID,
-          Input.fromBuffer(downloadedPhoto.source, downloadedPhoto.filename),
-          {
-            ...messageOptions,
-            caption: messageText || undefined,
-          },
-        );
+        await bot.telegram.sendPhoto(TELEGRAM_CHAT_ID, downloadedPhoto.url, {
+          ...messageOptions,
+          caption: messageText || undefined,
+        });
       } else {
         await bot.telegram.sendMessage(
           TELEGRAM_CHAT_ID,
@@ -367,6 +367,8 @@ async function sendToTelegram(gotifyMessage: GotifyMessage): Promise<void> {
           messageOptions,
           photoDetails: downloadedPhoto
             ? {
+                transport: "telegram-url-fetch",
+                photoUrl: downloadedPhoto.url,
                 filename: downloadedPhoto.filename,
                 contentType: downloadedPhoto.contentType,
                 contentLength: downloadedPhoto.contentLength,
